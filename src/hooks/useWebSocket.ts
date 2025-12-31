@@ -8,15 +8,22 @@ interface UseWebSocketProps {
   onMessage: (message: Message) => void;
 }
 
+// Auto-reconnect configuration
+const MAX_RETRIES = 5;
+const RECONNECT_DELAY = 3000; // 3 seconds
+
 export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps) => {
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [userId, setUserId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const intentionalCloseRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const previousUserIdRef = useRef<string | null>(null); // Keep track of previous user ID
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
+      console.log('[FRONTEND] WebSocket already connected');
       return;
     }
 
@@ -24,49 +31,73 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
     
     // Connect to WebSocket server
     const wsUrl = `ws://localhost:8080/ws?username=${encodeURIComponent(username)}&channel=${encodeURIComponent(channel)}`;
-    console.log('[WebSocket] Connecting to:', wsUrl);
+    console.log(`[FRONTEND-CONNECT] Attempting to connect to: ${wsUrl}`);
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('[WebSocket] Connected successfully');
+      console.log(`[FRONTEND-CONNECT] Connected to WebSocket as ${username} in channel ${channel}`);
       setStatus(ConnectionStatus.CONNECTED);
+      retryCountRef.current = 0; // Reset retry count on successful connection
     };
 
     ws.onmessage = (event) => {
       try {
         const message: Message = JSON.parse(event.data);
-        console.log('[WebSocket] Message received:', message);
+        console.log('[FRONTEND-MESSAGE]', message);
 
         // If this is a user_connected message, extract the user ID
         if (message.type === 'user_connected' && message.user_id) {
+          previousUserIdRef.current = message.user_id; // Store in ref
           setUserId(message.user_id);
-          console.log('[WebSocket] User ID assigned:', message.user_id);
+          console.log(`[FRONTEND-USER-ID] Assigned user ID: ${message.user_id}`);
         }
 
         onMessage(message);
       } catch (error) {
-        console.error('[WebSocket] Failed to parse message:', error);
+        console.error('[FRONTEND-ERROR] Failed to parse message:', error);
       }
     };
 
     ws.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
+      console.error('[FRONTEND-ERROR] WebSocket error:', error);
       setStatus(ConnectionStatus.ERROR);
     };
 
     ws.onclose = (event) => {
-      console.log('[WebSocket] Connection closed:', event.code, event.reason);
+      console.log(`[FRONTEND-DISCONNECT] Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
       setStatus(ConnectionStatus.DISCONNECTED);
-      setUserId(null);
       wsRef.current = null;
-
-      // Auto-reconnect after 3 seconds (optional)
-      // reconnectTimeoutRef.current = setTimeout(() => {
-      //   console.log('[WebSocket] Attempting to reconnect...');
-      //   connect();
-      // }, 3000);
+      
+      // Auto-reconnect logic
+      const shouldReconnect = 
+        !intentionalCloseRef.current && 
+        event.code !== 1000 && 
+        retryCountRef.current < MAX_RETRIES;
+      
+      if (shouldReconnect) {
+        retryCountRef.current += 1;
+        console.log(`[FRONTEND-CONNECT] Attempting to reconnect... (${retryCountRef.current}/${MAX_RETRIES})`);
+        console.log(`[FRONTEND-USER-ID] Keeping user ID during reconnection: ${previousUserIdRef.current}`);
+        
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect();
+        }, RECONNECT_DELAY);
+      } else {
+        // Only clear user ID if we've exhausted retries OR it was intentional disconnect
+        if (retryCountRef.current >= MAX_RETRIES) {
+          console.error('[FRONTEND-ERROR] Max reconnection attempts reached. Please refresh the page or click Connect.');
+          console.log('[FRONTEND-USER-ID] User ID cleared after max retries');
+          setUserId(null);
+          previousUserIdRef.current = null;
+          retryCountRef.current = 0; // Reset for future manual connection attempts
+        } else if (intentionalCloseRef.current) {
+          console.log('[FRONTEND-USER-ID] User ID cleared');
+          setUserId(null);
+          previousUserIdRef.current = null;
+        }
+      }
     };
   }, [username, channel, onMessage]);
 
@@ -76,13 +107,15 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
     }
 
     if (wsRef.current) {
-      console.log('[WebSocket] Disconnecting...');
+      console.log('[FRONTEND-DISCONNECT] User initiated disconnect');
+      intentionalCloseRef.current = true; // Mark as intentional close
       wsRef.current.close();
       wsRef.current = null;
     }
 
     setStatus(ConnectionStatus.DISCONNECTED);
     setUserId(null);
+    previousUserIdRef.current = null;
   }, []);
 
   const sendMessage = useCallback((content: string) => {
@@ -92,11 +125,11 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
         content,
       };
 
-      console.log('[WebSocket] Sending message:', message);
+      console.log('[FRONTEND-SEND]', message);
       wsRef.current.send(JSON.stringify(message));
       return true;
     } else {
-      console.warn('[WebSocket] Cannot send message: not connected');
+      console.warn('[FRONTEND-ERROR] Cannot send message: not connected');
       return false;
     }
   }, []);
@@ -104,6 +137,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      intentionalCloseRef.current = true; // Treat unmount as intentional close
       disconnect();
     };
   }, [disconnect]);
