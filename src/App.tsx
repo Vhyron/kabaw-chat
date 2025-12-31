@@ -3,11 +3,15 @@ import { useWebSocket } from './hooks/useWebSocket';
 import type { Message } from './types/message';
 import './styles/App.css';
 
-// Generate a colorful avatar based on username
+// Generate a colorful avatar based on username using Kabaw color palette
 const getAvatarColor = (username: string): string => {
   const colors = [
-    '#ef4444', '#f59e0b', '#10b981', '#3b82f6', 
-    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'
+    'hsl(var(--kabaw-green))',
+    'hsl(var(--kabaw-green-light))',
+    'hsl(var(--kabaw-accent-1))',
+    'hsl(var(--kabaw-accent-2))',
+    'hsl(var(--kabaw-blue))',
+    'hsl(var(--kabaw-purple))',
   ];
   let hash = 0;
   for (let i = 0; i < username.length; i++) {
@@ -102,45 +106,115 @@ function App() {
       <div className="chat-container">
         {/* Header */}
         <div className="chat-header">
-          <h1>🐃 Kabaw Chat</h1>
-          <div className="connection-status">
-            <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
-            <span>{isConnected ? 'Connected' : status === 'connecting' ? 'Connecting...' : 'Disconnected'}</span>
+          <div className="header-left">
+            <div className="logo">
+              <img src="/logo.png" alt="Kabaw" />
+            </div>
+            {isConnected && (
+              <div className="channel-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                  <line x1="4" y1="22" x2="4" y2="15"></line>
+                </svg>
+                {channel}
+              </div>
+            )}
+          </div>
+          <div className="header-right">
+            <div className="connection-status">
+              <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+              <span className="status-text">
+                {isConnected ? 'Connected' : status === 'connecting' ? 'Connecting...' : 'Disconnected'}
+              </span>
+            </div>
+            {isConnected && (
+              <button 
+                onClick={handleDisconnect}
+                className="disconnect-button"
+                aria-label="Disconnect"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                <span>Disconnect</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Connection Form (shown when disconnected) */}
         {!isConnected && (
           <div className="connection-form">
-            <h3>Join the Chat</h3>
-            <p>Server: ws://localhost:8080/ws</p>
-            <input
-              type="text"
-              placeholder="Enter your username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
-              disabled={status === 'connecting'}
-            />
-            <input
-              type="text"
-              placeholder="Channel (default: general)"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
-              disabled={status === 'connecting'}
-            />
-            <button 
-              onClick={handleConnect}
-              disabled={!username.trim() || status === 'connecting'}
-            >
-              {status === 'connecting' ? 'Connecting...' : 'Connect'}
-            </button>
-            {status === 'error' && (
-              <p style={{ color: '#ef4444', fontSize: '14px', marginTop: '10px', fontWeight: 600 }}>
-                ⚠️ Connection failed. Make sure the server is running on port 8080.
-              </p>
-            )}
+            <div className="form-content">
+              <div className="form-header">
+                <div className="form-logo">
+                  <img src="/logo.png" alt="Kabaw" />
+                </div>
+                <h3>Welcome to Kabaw Chat</h3>
+                <p className="form-description">Connect to start chatting with your team</p>
+              </div>
+              <div className="form-fields">
+                <div className="input-group">
+                  <label htmlFor="username">Username</label>
+                  <input
+                    id="username"
+                    type="text"
+                    placeholder="Enter your username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
+                    disabled={status === 'connecting'}
+                    autoFocus
+                  />
+                </div>
+                <div className="input-group">
+                  <label htmlFor="channel">Channel</label>
+                  <input
+                    id="channel"
+                    type="text"
+                    placeholder="general"
+                    value={channel}
+                    onChange={(e) => setChannel(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
+                    disabled={status === 'connecting'}
+                  />
+                </div>
+                <button 
+                  onClick={handleConnect}
+                  disabled={!username.trim() || status === 'connecting'}
+                  className="connect-button"
+                >
+                  {status === 'connecting' ? (
+                    <>
+                      <span className="spinner"></span>
+                      Connecting...
+                    </>
+                  ) : (
+                    'Connect to Chat'
+                  )}
+                </button>
+                {status === 'error' && (
+                  <div className="error-message">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="8" x2="12" y2="12"></line>
+                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    Connection failed. Make sure the server is running on port 8080.
+                  </div>
+                )}
+              </div>
+              <div className="server-info">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+                <code>ws://localhost:8080/ws</code>
+              </div>
+            </div>
           </div>
         )}
 
@@ -150,72 +224,42 @@ function App() {
             <div className="messages-container">
               {messages.length === 0 ? (
                 <div className="empty-state">
-                  <p>No messages yet. Start the conversation! 💬</p>
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  <p>No messages yet</p>
+                  <span>Start the conversation!</span>
                 </div>
               ) : (
                 <>
                   {messages.map((msg, index) => (
                     <div key={`${msg.username}-${msg.timestamp}-${index}`} className={getMessageClassName(msg)}>
                       {msg.type === 'system' || msg.type === 'user_connected' ? (
-                        <div className="message-content">
-                          <em>{msg.content}</em>
+                        <div className="system-message-content">
+                          <span>{msg.content}</span>
                           {msg.user_id && userId === msg.user_id && (
-                            <small style={{ display: 'block', marginTop: '6px', color: '#10b981', fontWeight: 600 }}>
-                              ✓ Your ID: {msg.user_id.slice(0, 8)}...
-                            </small>
+                            <span className="user-id-badge">
+                              ID: {msg.user_id.slice(0, 8)}
+                            </span>
                           )}
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', width: '100%' }}>
-                          {msg.username !== username && (
-                            <div
-                              style={{
-                                width: '36px',
-                                height: '36px',
-                                borderRadius: '50%',
-                                background: getAvatarColor(msg.username),
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: 'white',
-                                fontWeight: 'bold',
-                                fontSize: '14px',
-                                flexShrink: 0,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                              }}
-                            >
-                              {getInitials(msg.username)}
-                            </div>
-                          )}
-                          <div className="message-content" style={{ flex: 1 }}>
+                        <div className="message-wrapper">
+                          <div
+                            className="message-avatar"
+                            style={{ background: getAvatarColor(msg.username) }}
+                          >
+                            {getInitials(msg.username)}
+                          </div>
+                          <div className="message-content">
                             <div className="message-header">
-                              <strong>{msg.username}</strong>
+                              <span className="message-author">{msg.username}</span>
                               {msg.timestamp && (
-                                <small className="message-time">{formatTimestamp(msg.timestamp)}</small>
+                                <span className="message-time">{formatTimestamp(msg.timestamp)}</span>
                               )}
                             </div>
                             <div className="message-text">{msg.content}</div>
                           </div>
-                          {msg.username === username && (
-                            <div
-                              style={{
-                                width: '36px',
-                                height: '36px',
-                                borderRadius: '50%',
-                                background: getAvatarColor(msg.username),
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: 'white',
-                                fontWeight: 'bold',
-                                fontSize: '14px',
-                                flexShrink: 0,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                              }}
-                            >
-                              {getInitials(msg.username)}
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
@@ -227,25 +271,27 @@ function App() {
 
             {/* Message Input */}
             <div className="message-input-container">
-              <input
-                type="text"
-                placeholder="Type your message..."
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              />
-              <button 
-                onClick={handleSendMessage}
-                disabled={!messageInput.trim()}
-              >
-                Send
-              </button>
-              <button 
-                onClick={handleDisconnect}
-                style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}
-              >
-                Disconnect
-              </button>
+              <div className="input-wrapper">
+                <input
+                  type="text"
+                  placeholder="Type a message..."
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  className="message-input"
+                />
+                <button 
+                  onClick={handleSendMessage}
+                  disabled={!messageInput.trim()}
+                  className="send-button"
+                  aria-label="Send message"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </div>
           </>
         )}
