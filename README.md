@@ -2,8 +2,6 @@
 
 A modern, real-time chat application built with React and TypeScript, connecting to the [Kabaw WebSocket Server](https://github.com/kabaw-ai/kabaw-sockets).
 
-![Kabaw Chat](logo.png)
-
 ## Features
 
 - 🚀 Real-time messaging via WebSockets
