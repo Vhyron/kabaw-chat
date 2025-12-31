@@ -11,15 +11,22 @@ interface UseWebSocketProps {
 // Auto-reconnect configuration
 const MAX_RETRIES = 5;
 const RECONNECT_DELAY = 3000; // 3 seconds
+const MIN_CONNECTING_DISPLAY_TIME = 800; // Minimum time to show "Connecting..." state (800ms)
 
 export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps) => {
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [shouldReload, setShouldReload] = useState(false);
+  const [reloadCountdown, setReloadCountdown] = useState(5);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const reloadTimeoutRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
   const intentionalCloseRef = useRef(false);
   const retryCountRef = useRef(0);
-  const previousUserIdRef = useRef<string | null>(null); // Keep track of previous user ID
+  const previousUserIdRef = useRef<string | null>(null);
+  const connectingStartTimeRef = useRef<number>(0);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -27,6 +34,8 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
       return;
     }
 
+    // Track when we started connecting
+    connectingStartTimeRef.current = Date.now();
     setStatus(ConnectionStatus.CONNECTING);
     
     // Connect to WebSocket server
@@ -38,8 +47,17 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
 
     ws.onopen = () => {
       console.log(`[FRONTEND-CONNECT] Connected to WebSocket as ${username} in channel ${channel}`);
-      setStatus(ConnectionStatus.CONNECTED);
-      retryCountRef.current = 0; // Reset retry count on successful connection
+      
+      // Calculate how long we've been in "connecting" state
+      const elapsedTime = Date.now() - connectingStartTimeRef.current;
+      const remainingTime = Math.max(0, MIN_CONNECTING_DISPLAY_TIME - elapsedTime);
+      
+      // Ensure the "Connecting..." state is visible for at least MIN_CONNECTING_DISPLAY_TIME
+      setTimeout(() => {
+        setStatus(ConnectionStatus.CONNECTED);
+        setIsReconnecting(false);
+        retryCountRef.current = 0; // Reset retry count on successful connection
+      }, remainingTime);
     };
 
     ws.onmessage = (event) => {
@@ -49,7 +67,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
 
         // If this is a user_connected message, extract the user ID
         if (message.type === 'user_connected' && message.user_id) {
-          previousUserIdRef.current = message.user_id; // Store in ref
+          previousUserIdRef.current = message.user_id;
           setUserId(message.user_id);
           console.log(`[FRONTEND-USER-ID] Assigned user ID: ${message.user_id}`);
         }
@@ -67,7 +85,16 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
 
     ws.onclose = (event) => {
       console.log(`[FRONTEND-DISCONNECT] Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
-      setStatus(ConnectionStatus.DISCONNECTED);
+      
+      // Calculate elapsed time to ensure minimum display
+      const elapsedTime = Date.now() - connectingStartTimeRef.current;
+      const remainingTime = Math.max(0, MIN_CONNECTING_DISPLAY_TIME - elapsedTime);
+      
+      // Delay state update to ensure smooth transition
+      setTimeout(() => {
+        setStatus(ConnectionStatus.DISCONNECTED);
+      }, remainingTime);
+      
       wsRef.current = null;
       
       // Auto-reconnect logic
@@ -78,6 +105,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
       
       if (shouldReconnect) {
         retryCountRef.current += 1;
+        setIsReconnecting(true);
         console.log(`[FRONTEND-CONNECT] Attempting to reconnect... (${retryCountRef.current}/${MAX_RETRIES})`);
         console.log(`[FRONTEND-USER-ID] Keeping user ID during reconnection: ${previousUserIdRef.current}`);
         
@@ -85,13 +113,35 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
           connect();
         }, RECONNECT_DELAY);
       } else {
+        setIsReconnecting(false);
+        
         // Only clear user ID if we've exhausted retries OR it was intentional disconnect
         if (retryCountRef.current >= MAX_RETRIES) {
-          console.error('[FRONTEND-ERROR] Max reconnection attempts reached. Please refresh the page or click Connect.');
+          console.error('[FRONTEND-ERROR] Max reconnection attempts reached. Reloading page in 3 seconds...');
           console.log('[FRONTEND-USER-ID] User ID cleared after max retries');
           setUserId(null);
           previousUserIdRef.current = null;
-          retryCountRef.current = 0; // Reset for future manual connection attempts
+          retryCountRef.current = 0;
+          
+          // Trigger reload sequence
+          setShouldReload(true);
+          setReloadCountdown(3);
+          
+          // Start countdown
+          countdownIntervalRef.current = window.setInterval(() => {
+            setReloadCountdown((prev) => {
+              if (prev <= 1) {
+                // Countdown finished, reload the page
+                if (countdownIntervalRef.current) {
+                  clearInterval(countdownIntervalRef.current);
+                }
+                window.location.reload();
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+          
         } else if (intentionalCloseRef.current) {
           console.log('[FRONTEND-USER-ID] User ID cleared');
           setUserId(null);
@@ -106,16 +156,38 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
       clearTimeout(reconnectTimeoutRef.current);
     }
 
+    if (reloadTimeoutRef.current) {
+      clearTimeout(reloadTimeoutRef.current);
+    }
+
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
+
     if (wsRef.current) {
       console.log('[FRONTEND-DISCONNECT] User initiated disconnect');
-      intentionalCloseRef.current = true; // Mark as intentional close
+      intentionalCloseRef.current = true;
       wsRef.current.close();
       wsRef.current = null;
     }
 
     setStatus(ConnectionStatus.DISCONNECTED);
+    setIsReconnecting(false);
+    setShouldReload(false);
     setUserId(null);
     previousUserIdRef.current = null;
+  }, []);
+
+  const cancelReload = useCallback(() => {
+    console.log('[FRONTEND-RELOAD] User cancelled auto-reload');
+    
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    
+    setShouldReload(false);
+    setReloadCountdown(3);
   }, []);
 
   const sendMessage = useCallback((content: string) => {
@@ -137,7 +209,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      intentionalCloseRef.current = true; // Treat unmount as intentional close
+      intentionalCloseRef.current = true;
       disconnect();
     };
   }, [disconnect]);
@@ -146,8 +218,13 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
     connect,
     disconnect,
     sendMessage,
+    cancelReload,
     status,
     userId,
     isConnected: status === ConnectionStatus.CONNECTED,
+    isReconnecting,
+    retryCount: retryCountRef.current,
+    shouldReload,
+    reloadCountdown,
   };
 };

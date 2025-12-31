@@ -42,8 +42,20 @@ function App() {
     setMessages((prev) => [...prev, message]);
   }, []);
 
-  // Initialize WebSocket
-  const { connect, disconnect, sendMessage, status, userId, isConnected } = useWebSocket({
+  // Initialize WebSocket with reconnecting state
+  const { 
+    connect, 
+    disconnect, 
+    sendMessage, 
+    cancelReload,
+    status, 
+    userId, 
+    isConnected, 
+    isReconnecting, 
+    retryCount,
+    shouldReload,
+    reloadCountdown,
+  } = useWebSocket({
     username: username || 'Anonymous',
     channel,
     onMessage: handleMessage,
@@ -101,6 +113,20 @@ function App() {
     return 'message message-other';
   };
 
+  // Determine connection status text
+  const getConnectionStatusText = () => {
+    if (isReconnecting) {
+      return `Reconnecting... (${retryCount}/5)`;
+    }
+    if (status === 'connecting') {
+      return 'Connecting...';
+    }
+    if (isConnected) {
+      return 'Connected';
+    }
+    return 'Disconnected';
+  };
+
   return (
     <div className="app">
       <div className="chat-container">
@@ -122,12 +148,12 @@ function App() {
           </div>
           <div className="header-right">
             <div className="connection-status">
-              <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+              <span className={`status-dot ${isConnected ? 'connected' : isReconnecting ? 'reconnecting' : 'disconnected'}`} />
               <span className="status-text">
-                {isConnected ? 'Connected' : status === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                {getConnectionStatusText()}
               </span>
             </div>
-            {isConnected && (
+            {isConnected && !isReconnecting && (
               <button 
                 onClick={handleDisconnect}
                 className="disconnect-button"
@@ -143,8 +169,36 @@ function App() {
           </div>
         </div>
 
+        {/* Reconnecting Banner */}
+        {isReconnecting && !shouldReload && (
+          <div className="reconnecting-banner">
+            <span className="spinner-small"></span>
+            <span>Connection lost. Attempting to reconnect... ({retryCount}/5)</span>
+          </div>
+        )}
+
+        {/* Reload Banner */}
+        {shouldReload && (
+          <div className="reload-banner">
+            <div className="reload-content">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div className="reload-text">
+                <strong>Connection failed after 5 attempts</strong>
+                <span>Reloading page in {reloadCountdown} second{reloadCountdown !== 1 ? 's' : ''}...</span>
+              </div>
+            </div>
+            <button onClick={cancelReload} className="cancel-reload-button">
+              Cancel
+            </button>
+          </div>
+        )}
+
         {/* Connection Form (shown when disconnected) */}
-        {!isConnected && (
+        {!isConnected && !isReconnecting && (
           <div className="connection-form">
             <div className="form-content">
               <div className="form-header">
@@ -218,8 +272,8 @@ function App() {
           </div>
         )}
 
-        {/* Chat Messages (shown when connected) */}
-        {isConnected && (
+        {/* Chat Messages (shown when connected or reconnecting) */}
+        {(isConnected || isReconnecting) && (
           <>
             <div className="messages-container">
               {messages.length === 0 ? (
@@ -274,15 +328,16 @@ function App() {
               <div className="input-wrapper">
                 <input
                   type="text"
-                  placeholder="Type a message..."
+                  placeholder={isReconnecting ? "Reconnecting..." : "Type a message..."}
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   className="message-input"
+                  disabled={isReconnecting}
                 />
                 <button 
                   onClick={handleSendMessage}
-                  disabled={!messageInput.trim()}
+                  disabled={!messageInput.trim() || isReconnecting}
                   className="send-button"
                   aria-label="Send message"
                 >
