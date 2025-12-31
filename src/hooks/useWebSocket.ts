@@ -19,6 +19,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
   const reconnectTimeoutRef = useRef<number | null>(null);
   const intentionalCloseRef = useRef(false);
   const retryCountRef = useRef(0);
+  const previousUserIdRef = useRef<string | null>(null); // Keep track of previous user ID
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -48,6 +49,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
 
         // If this is a user_connected message, extract the user ID
         if (message.type === 'user_connected' && message.user_id) {
+          previousUserIdRef.current = message.user_id; // Store in ref
           setUserId(message.user_id);
           console.log(`[FRONTEND-USER-ID] Assigned user ID: ${message.user_id}`);
         }
@@ -66,9 +68,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
     ws.onclose = (event) => {
       console.log(`[FRONTEND-DISCONNECT] Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
       setStatus(ConnectionStatus.DISCONNECTED);
-      setUserId(null);
       wsRef.current = null;
-      console.log('[FRONTEND-USER-ID] User ID cleared');
       
       // Auto-reconnect logic
       const shouldReconnect = 
@@ -79,13 +79,24 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
       if (shouldReconnect) {
         retryCountRef.current += 1;
         console.log(`[FRONTEND-CONNECT] Attempting to reconnect... (${retryCountRef.current}/${MAX_RETRIES})`);
+        console.log(`[FRONTEND-USER-ID] Keeping user ID during reconnection: ${previousUserIdRef.current}`);
         
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();
         }, RECONNECT_DELAY);
-      } else if (retryCountRef.current >= MAX_RETRIES) {
-        console.error('[FRONTEND-ERROR] Max reconnection attempts reached. Please refresh the page or click Connect.');
-        retryCountRef.current = 0; // Reset for future manual connection attempts
+      } else {
+        // Only clear user ID if we've exhausted retries OR it was intentional disconnect
+        if (retryCountRef.current >= MAX_RETRIES) {
+          console.error('[FRONTEND-ERROR] Max reconnection attempts reached. Please refresh the page or click Connect.');
+          console.log('[FRONTEND-USER-ID] User ID cleared after max retries');
+          setUserId(null);
+          previousUserIdRef.current = null;
+          retryCountRef.current = 0; // Reset for future manual connection attempts
+        } else if (intentionalCloseRef.current) {
+          console.log('[FRONTEND-USER-ID] User ID cleared');
+          setUserId(null);
+          previousUserIdRef.current = null;
+        }
       }
     };
   }, [username, channel, onMessage]);
@@ -104,6 +115,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
 
     setStatus(ConnectionStatus.DISCONNECTED);
     setUserId(null);
+    previousUserIdRef.current = null;
   }, []);
 
   const sendMessage = useCallback((content: string) => {
