@@ -8,6 +8,7 @@ interface UseWebSocketProps {
   onMessage: (message: Message) => void;
 }
 
+// Auto-reconnect configuration
 const MAX_RETRIES = 5;
 const RECONNECT_DELAY = 3000; // 3 seconds
 
@@ -48,6 +49,7 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
         // If this is a user_connected message, extract the user ID
         if (message.type === 'user_connected' && message.user_id) {
           setUserId(message.user_id);
+          console.log(`[FRONTEND-USER-ID] Assigned user ID: ${message.user_id}`);
         }
 
         onMessage(message);
@@ -66,12 +68,9 @@ export const useWebSocket = ({ username, channel, onMessage }: UseWebSocketProps
       setStatus(ConnectionStatus.DISCONNECTED);
       setUserId(null);
       wsRef.current = null;
+      console.log('[FRONTEND-USER-ID] User ID cleared');
       
-      // Smart auto-reconnect logic
-      // Only reconnect if:
-      // 1. Connection wasn't closed intentionally by user
-      // 2. Connection wasn't closed normally (code 1000)
-      // 3. Haven't exceeded max retry attempts
+      // Auto-reconnect logic
       const shouldReconnect = 
         !intentionalCloseRef.current && 
         event.code !== 1000 && 
