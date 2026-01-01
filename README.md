@@ -69,10 +69,27 @@ kabaw-chat/
 
 This client connects to the Kabaw WebSocket Server. To run the server:
 
+### 1. Clone Kabaw Sockets
+
 ```bash
 git clone https://github.com/kabaw-ai/kabaw-sockets.git
+```
+
+### 2. Open Project
+
+```bash
 cd kabaw-sockets
+```
+
+### 3. Install Dependencies 
+
+```bash
 go mod tidy
+```
+
+### 4. Run the Server
+
+```bash
 go run main.go
 ```
 
